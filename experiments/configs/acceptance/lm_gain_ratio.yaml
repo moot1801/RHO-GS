@@ -1,0 +1,3 @@
+acceptance:
+  name: lm_gain_ratio
+  minimum_gain_ratio: 0.0

@@ -1,0 +1,9 @@
+evaluation:
+  primary_view_id: 51
+  nearby_view_count: 4
+  global_audit_view_count: 8
+  image_scale_factor: 0.25
+  top_tiles: 2
+  pixels_per_tile: 16
+  tile_size: 16
+  anchor_count: 8

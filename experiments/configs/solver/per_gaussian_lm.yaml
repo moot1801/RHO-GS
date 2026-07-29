@@ -1,0 +1,2 @@
+solver:
+  name: per_gaussian_lm

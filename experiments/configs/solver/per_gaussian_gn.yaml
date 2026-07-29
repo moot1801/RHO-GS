@@ -1,0 +1,3 @@
+solver:
+  name: per_gaussian_gn
+  initial_damping: 0.0

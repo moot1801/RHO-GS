@@ -1,0 +1,63 @@
+experiment_name: coupling_reference
+checkpoint: null
+base_config: null
+scene: lego
+seed: 0
+device: cuda
+output_root: output/RHO_GS/experiments
+grouping:
+  name: visible_overlap_knn
+  group_size: 8
+  candidate_pool_size: 32
+  sampled_anchor_count: 8
+  maximum_groups: 8
+  distance_threshold: null
+  visibility_threshold: 0.0
+  projected_overlap_threshold: 0.0
+  use_tile_overlap: true
+  minimum_shared_tiles: 1
+  overlapping: true
+  directed: false
+  seed: 0
+attributes:
+  name: position
+  max_step_norm: null
+  max_step_scene_fraction: 0.001
+residual:
+  name: rgb_l2_sampled
+jacobian:
+  name: repeated_vjp
+  finite_difference_epsilon: 0.0001
+curvature:
+  name: gauss_newton
+solver:
+  name: group_lm
+  initial_damping: 0.001
+  damping_mode: diagonal
+  damping_increase_factor: 10.0
+  damping_decrease_factor: 0.3333333333333333
+  minimum_damping: 1.0e-08
+  maximum_damping: 1.0e8
+  maximum_solve_attempts: 5
+  condition_number_threshold: 1.0e12
+  diagnostic_dtype: float64
+aggregation:
+  name: anchor_only
+acceptance:
+  name: lm_gain_ratio
+  minimum_gain_ratio: 0.0
+evaluation:
+  primary_view_id: 51
+  nearby_view_count: 4
+  global_audit_view_count: 8
+  image_scale_factor: 0.25
+  top_tiles: 2
+  pixels_per_tile: 16
+  tile_size: 16
+  anchor_count: 8
+benchmark:
+  iterations: 100
+  fixed_topology: true
+  warmup_iterations: 3
+  camera_sequence_seed: 0
+  evaluation_interval: 10

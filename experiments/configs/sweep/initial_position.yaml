@@ -1,0 +1,7 @@
+base:
+  - experiment=lego_position_reference
+  - checkpoint=<checkpoint-path>
+matrix:
+  grouping: [independent, knn_3d, visible_overlap_knn]
+  grouping.group_size: [4, 8, 16]
+  solver: [per_gaussian_lm, group_lm]
