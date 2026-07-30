@@ -47,8 +47,6 @@ TRAINING:
         ACTIVATE: false
     WRITE_VRAM_STATS: true
     USE_MORTON_ORDERING: false
-    TILE_GAUSSIAN_STATS:
-        ACTIVE: false
     RANDOM_INITIALIZATION:
         FORCE: false
         N_POINTS: 100_000

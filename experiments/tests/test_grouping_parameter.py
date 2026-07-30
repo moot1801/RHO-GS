@@ -6,6 +6,7 @@ import torch
 
 from experiments.coupling.grouping import KNN3DGrouping, VisibleOverlapKNNGrouping
 from experiments.coupling.parameter_blocks import PositionBlock
+from experiments.sampling import sample_top_tiles_and_pixels
 from experiments.types import RenderState
 
 
@@ -58,6 +59,35 @@ class GroupingParameterTest(unittest.TestCase):
         self.assertFalse(torch.equal(block.gather(gaussians, indices), snapshot))
         block.restore(gaussians, indices, snapshot)
         self.assertTrue(torch.equal(block.gather(gaussians, indices), snapshot))
+
+    @unittest.skipUnless(torch.cuda.is_available(), "CUDA is required for default-device regression")
+    def test_sampling_with_cuda_default_device(self):
+        previous_device = torch.get_default_device()
+        try:
+            torch.set_default_device("cuda")
+            state = render_state()
+            first = sample_top_tiles_and_pixels(state, {"top_tiles": 1, "pixels_per_tile": 4, "seed": 7})
+            second = sample_top_tiles_and_pixels(state, {"top_tiles": 1, "pixels_per_tile": 4, "seed": 7})
+            grouping_config = {
+                "seed": 7,
+                "sampled_anchor_count": 3,
+                "maximum_groups": 3,
+                "group_size": 2,
+                "candidate_pool_size": 4,
+                "overlapping": True,
+            }
+            first_groups = KNN3DGrouping().build_groups(FakeGaussians(), None, None, grouping_config)
+            second_groups = KNN3DGrouping().build_groups(FakeGaussians(), None, None, grouping_config)
+            self.assertEqual(first[0].device.type, "cuda")
+            self.assertEqual(first[1].device.type, "cuda")
+            self.assertTrue(torch.equal(first[0], second[0]))
+            self.assertTrue(torch.equal(first[1], second[1]))
+            self.assertEqual(
+                [group.member_gaussian_ids for group in first_groups.groups],
+                [group.member_gaussian_ids for group in second_groups.groups],
+            )
+        finally:
+            torch.set_default_device(previous_device)
 
 
 if __name__ == "__main__":

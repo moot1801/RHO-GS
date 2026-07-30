@@ -49,3 +49,14 @@ python -m experiments.runners.train_with_portable_states \
 - 상태: `awaiting-run`
 - model-only final checkpoint가 Adam moment를 포함하지 않아 공정한 early/middle/late 비교용 baseline을 계획했다.
 - 실제 실행과 결과는 아직 확인하지 않았다.
+
+### 2026-07-30 — command-correction
+
+- 기존 `PYTHONPATH=src:src/Methods/RHO_GS`는 source `RHOGSCudaBackend`가 설치 extension namespace를 가리므로 GPU runner 명령에서 사용하지 않는다.
+- 아래 package-qualified 명령을 현재 재현 명령으로 사용한다.
+
+```bash
+PYTHONPATH=src \
+python -m Methods.RHO_GS.experiments.runners.train_with_portable_states \
+  -c src/Methods/RHO_GS/rho_gs_lego_coupling_states.yaml
+```

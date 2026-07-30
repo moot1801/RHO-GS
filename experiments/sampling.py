@@ -71,7 +71,7 @@ def sample_top_tiles_and_pixels(render_state: RenderState, config: dict[str, Any
         x1 = min(x0 + render_state.tile_size, render_state.image_width)
         y1 = min(y0 + render_state.tile_size, render_state.image_height)
         local_count = (x1 - x0) * (y1 - y0)
-        selected = torch.randperm(local_count, generator=generator)[:min(pixels_per_tile, local_count)]
+        selected = torch.randperm(local_count, generator=generator, device="cpu")[:min(pixels_per_tile, local_count)]
         for local in selected.tolist():
             y, x = divmod(local, x1 - x0)
             pixel_ids.append((y0 + y) * render_state.image_width + x0 + x)

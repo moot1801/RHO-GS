@@ -221,3 +221,29 @@ PYTHONPATH=src/Methods/RHO_GS python -m unittest discover \
 - 기존 `.gitignore`의 Obsidian 사용자 변경과 섞이지 않도록 coupling YAML 예외 규칙은 제거했다.
 - 신규 experiment YAML과 portable-state YAML은 이번 RHO_GS commit에서 명시적으로 force-stage한다.
 - NeRFICG root의 DEV/WORKS/MAIN index와 정책은 로컬 문서로만 유지하고 commit하지 않는다.
+
+### 2026-07-30 — gpu-smoke-blocked
+
+- 상태: `committed-gpu-blocked`
+- commit `5f1ef86`과 namespace commit `d51aa85` 상태에서 기존 Lego 30K checkpoint를 사용한 최소 analyzer GPU smoke를 실행했다.
+- 조건은 independent group 1개, Gaussian 1개, top tile 1개, sampled pixel 1개, image scale 0.125였다.
+- runtime setup, dataset/checkpoint load, RHO_GS model·renderer 생성까지 성공했으나 pixel sampling에서 중단됐다.
+- `experiments/sampling.py`가 CPU generator를 생성한 뒤 Framework의 CUDA default device를 따르는 `torch.randperm()`에 전달해 `Expected a 'cuda' device type for generator but found 'cpu'`가 발생했다.
+- failure artifact는 `output/RHO_GS/experiments/d20260729_001_gpu_smoke_analyze-20260730T020430173365Z-1a3b62fa`에 저장됐다.
+- 기존 16개 CPU `unittest`는 모두 통과했으므로 현재 blocker는 GPU default-device 조건을 다루지 못한 sampling 경로로 한정된다.
+- 문서화된 `PYTHONPATH=src:src/Methods/RHO_GS`는 source `RHOGSCudaBackend`가 설치 extension namespace를 가리는 별도 충돌을 만든다. `PYTHONPATH=src`와 `Methods.RHO_GS.experiments...` package entry로 실행하면 이 충돌을 피할 수 있다.
+- `rho_gs_lego_coupling_states.yaml`에는 퇴역한 `TILE_GAUSSIAN_STATS.ACTIVE` 항목이 남아 있어 후속 정리 대상이다.
+- 이번 검증에서는 원인 확인과 artifact 기록만 수행했고 source 수정은 하지 않았다.
+
+### 2026-07-30 — gpu-reference-verified
+
+- 상태: `gpu-smoke-verified-fix-uncommitted`
+- sampling, grouping anchor 및 rollout camera sequence의 CPU generator가 CUDA default device와 충돌하지 않도록 `torch.randperm(..., device="cpu")`를 명시했다.
+- CUDA default-device에서 sampling과 grouping determinism을 확인하는 regression test를 추가했고 GPU 전체 `unittest` 17개가 통과했다.
+- GPU runner 명령을 `PYTHONPATH=src`와 `Methods.RHO_GS.experiments.runners.<runner>` package entry로 정정하고 portable-state config의 퇴역 tile 통계 항목을 제거했다.
+- 최소 independent analyzer는 `d20260729_001_gpu_smoke_analyze_fixed2-20260730T021437670040Z-158c0bd4`에서 완료됐고 failure record는 0개였다.
+- visible-overlap K=2 analyzer도 전체 경로와 pairwise CSV 생성을 완료했으나 random anchor가 sampled residual에 기여하지 않아 Hessian과 coupling이 0이었다.
+- 동일 full tile loss의 전체 position gradient는 14,279개 Gaussian에서 nonzero였으므로 rasterizer backward 또는 residual sampling 전체가 0인 문제는 아니었다.
+- gradient norm 상위 Gaussian 49,945와 49,873의 repeated-VJP reference는 Jacobian norm 43.9866, raw off-diagonal Frobenius norm 642.5876, normalized spectral coupling 0.9690, Frobenius coupling 1.3670, symmetry relative error 0을 기록했다.
+- 이 결과는 실제 기여 pair의 GPU Jacobian·Gauss-Newton·normalized coupling 경로가 동작함을 검증하며, tile-overlap random anchor가 실제 contributor를 보장하지 않는 별도 sampling 한계를 드러낸다.
+- 공식 W-20260729-002/R01 실행 전 contributor-aware anchor 또는 분석 전용 fixed/oracle anchor 전략을 추가하는 것이 필요하다.

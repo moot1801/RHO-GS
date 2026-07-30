@@ -22,7 +22,7 @@ def _anchors(config: dict[str, Any], count: int, device: torch.device, eligible:
     maximum = int(config.get("maximum_groups", requested))
     take = min(candidates.numel(), requested, maximum)
     generator = torch.Generator(device="cpu").manual_seed(int(config.get("seed", 0)))
-    order = torch.randperm(candidates.numel(), generator=generator)[:take].to(candidates.device)
+    order = torch.randperm(candidates.numel(), generator=generator, device="cpu")[:take].to(candidates.device)
     return candidates[order]
 
 

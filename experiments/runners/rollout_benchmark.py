@@ -42,7 +42,7 @@ def main(argv: list[str] | None = None) -> int:
         initial_gaussian_count = int(runtime.model.gaussians.means.shape[0])
         train_views = list(runtime.dataset.train())
         generator = torch.Generator(device="cpu").manual_seed(int(config["benchmark"].get("camera_sequence_seed", 0)))
-        sequence = torch.randperm(len(train_views), generator=generator).tolist()
+        sequence = torch.randperm(len(train_views), generator=generator, device="cpu").tolist()
         iterations = int(config["benchmark"].get("iterations", 100))
         evaluation_interval = int(config["benchmark"].get("evaluation_interval", 10))
         damping = float(config["solver"].get("initial_damping", 1.0e-3))

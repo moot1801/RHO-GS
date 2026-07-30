@@ -22,7 +22,7 @@
 NeRFICG root에서 다음 path를 사용한다.
 
 ```bash
-export PYTHONPATH=src:src/Methods/RHO_GS
+export PYTHONPATH=src
 ```
 
 모든 runner는 `key=value` 인자를 받는다. `grouping=knn_3d` 같은 값은 `configs/grouping/knn_3d.yaml` fragment를 선택하며 `grouping.group_size=8`은 최종 값을 덮어쓴다. 소문자 `true`/`false`도 실제 boolean으로 해석된다.
@@ -30,7 +30,7 @@ export PYTHONPATH=src:src/Methods/RHO_GS
 ### 1. 현재 late checkpoint 분석
 
 ```bash
-python -m experiments.runners.analyze_checkpoint \
+python -m Methods.RHO_GS.experiments.runners.analyze_checkpoint \
   experiment=lego_position_reference \
   experiment_name=w20260729_002_r01_late_checkpoint_analysis \
   checkpoint=output/RHO_GS/rho_gs_lego_fixed_view_tile_stats_w20260728_003_r01_2026-07-28-19-21-37/checkpoints/final.pt \
@@ -42,7 +42,7 @@ python -m experiments.runners.analyze_checkpoint \
 ### 2. One-step counterfactual
 
 ```bash
-python -m experiments.runners.one_step_benchmark \
+python -m Methods.RHO_GS.experiments.runners.one_step_benchmark \
   experiment=lego_position_reference \
   experiment_name=w20260729_002_r02_late_one_step \
   checkpoint=output/RHO_GS/rho_gs_lego_fixed_view_tile_stats_w20260728_003_r01_2026-07-28-19-21-37/checkpoints/final.pt \
@@ -55,7 +55,7 @@ python -m experiments.runners.one_step_benchmark \
 ### 3. early/middle/late portable state 학습
 
 ```bash
-python -m experiments.runners.train_with_portable_states \
+python -m Methods.RHO_GS.experiments.runners.train_with_portable_states \
   -c src/Methods/RHO_GS/rho_gs_lego_coupling_states.yaml
 ```
 
@@ -70,7 +70,7 @@ python -m experiments.runners.train_with_portable_states \
 ### 4. Fixed-topology rollout
 
 ```bash
-python -m experiments.runners.rollout_benchmark \
+python -m Methods.RHO_GS.experiments.runners.rollout_benchmark \
   experiment=lego_position_reference \
   experiment_name=w20260729_002_r03_portable_rollout \
   checkpoint=<portable-state-path> \
@@ -119,7 +119,7 @@ output/RHO_GS/experiments/<experiment-id>/
 ### 선택적 sweep과 plot
 
 ```bash
-python -m experiments.runners.sweep \
+python -m Methods.RHO_GS.experiments.runners.sweep \
   runner=analyze_checkpoint \
   matrix=src/Methods/RHO_GS/experiments/configs/sweep/initial_position.yaml \
   dry_run=true
@@ -128,7 +128,7 @@ python -m experiments.runners.sweep \
 기본값은 실행하지 않고 `sweep_manifest.json`만 만든다. matrix의 `<checkpoint-path>`를 바꾼 뒤 `dry_run=false`로 명시한 조합만 실행한다. 결과 plot은 다음처럼 생성한다.
 
 ```bash
-python -m experiments.runners.summarize_results \
+python -m Methods.RHO_GS.experiments.runners.summarize_results \
   output/RHO_GS/experiments/<experiment-id>
 ```
 
@@ -156,9 +156,7 @@ class MyGrouping:
 ## 수치 검증
 
 ```bash
-PYTHONPATH=src/Methods/RHO_GS \
-python -m unittest discover \
-  -s src/Methods/RHO_GS/experiments/tests -v
+(cd src/Methods/RHO_GS && python -m unittest discover -s experiments/tests -v)
 ```
 
 검증 항목은 config/registry, grouping determinism, snapshot/restore, step clipping, finite difference Jacobian, `J^T r` gradient identity, `J^T J` symmetry·PSD, block consistency, GN/LM solve, predicted reduction, overlapping aggregation, portable state, timing/memory smoke다.
@@ -172,3 +170,4 @@ python -m unittest discover \
 - `oracle_jtj_topk`와 optimized CUDA 경로는 Priority 4로 남겨 두었다.
 - one-step/rollout GPU 장면 통합은 실제 실행 전까지 `미확인`이다. 근거 구현은 `experiments/runners/`이며 CPU 수치 test만 완료됐다.
 - output의 Gaussian ID는 해당 checkpoint/snapshot 내부 index다. topology가 다른 checkpoint끼리 직접 identity로 대응시키지 않는다.
+- tile/footprint overlap 기반 random anchor는 실제 sampled residual 기여를 보장하지 않으므로 zero Jacobian group이 생성될 수 있다. zero group을 실패로 누락하지 말고 기록하며 contributor-aware 또는 oracle anchor는 별도 전략으로 추가해야 한다.

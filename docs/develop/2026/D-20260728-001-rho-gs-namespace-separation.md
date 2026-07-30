@@ -120,3 +120,14 @@ retrospective: true
 - coupling framework 표준 `unittest` 16개와 변경 Python 파일 구문 검사, staged·unstaged whitespace 검사가 통과했다.
 - 전체 Method import는 현재 Codex 실행 환경에 CUDA GPU가 노출되지 않아 GUI 초기화 단계에서 재검증하지 못했다.
 - CUDA backend 소스가 복원됐으므로 실제 GPU 실행 전 현재 소스 기준 재빌드가 필요하다.
+
+### 2026-07-30 — gpu-smoke-verified
+
+- 상태: `committed-gpu-smoke-verified`
+- commit `d51aa85` 소스 기준 `RHOGSCudaBackend` wheel을 `--no-build-isolation --no-deps --force-reinstall`로 재빌드·재설치했다.
+- CUDA extension wheel build와 설치가 성공했고 `RHOGSCudaBackend._C`가 `nerficg` 환경의 site-packages에서 로드되는 것을 확인했다.
+- RTX 4070 Ti에서 `RHOGSModel`, `RHOGSRenderer`, `RHOGSTrainer`, `RHOGSLoss` 전체 import가 성공했으며 제거한 `TileGaussianStats` API가 노출되지 않음을 확인했다.
+- Lego 100,000 Gaussian, 2-iteration 학습에서 rasterizer forward/backward, loss, PyTorch Adam step과 framework teardown이 정상 완료됐다.
+- smoke output은 `output/RHO_GS/rho_gs_namespace_gpu_smoke_d20260728_001_r02_2026-07-30-11-03-38`이며 peak VRAM은 0.24 GiB allocated, 0.26 GiB reserved였다.
+- 첫 시도 R01은 `PYTHONPATH`에 `src/Methods/RHO_GS`를 추가해 source package가 설치 extension namespace를 가리면서 실패했다. 표준 학습은 `PYTHONPATH=src`만 사용한 R02에서 성공했다.
+- Python 3.11.15는 프로젝트 검증 기준 3.11.14와 patch version이 달라 warning이 있었지만 실행에는 영향이 없었다.

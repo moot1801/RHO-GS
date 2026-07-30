@@ -83,3 +83,26 @@ python -m experiments.runners.rollout_benchmark \
 - 상태: `awaiting-run`
 - runner와 CPU reference test만 준비됐으며 실제 Lego CUDA 실행 결과는 없다.
 - R01부터 순서대로 실행하고 각 output directory와 failure record를 보고한다.
+
+### 2026-07-30 — command-correction
+
+- 기존 `PYTHONPATH=src:src/Methods/RHO_GS`는 source `RHOGSCudaBackend`가 설치 extension namespace를 가리므로 GPU runner 명령에서 사용하지 않는다.
+- analyzer, one-step, rollout은 `PYTHONPATH=src`와 `Methods.RHO_GS.experiments.runners.<runner>` package entry를 사용한다.
+
+```bash
+PYTHONPATH=src \
+python -m Methods.RHO_GS.experiments.runners.analyze_checkpoint \
+  experiment=lego_position_reference \
+  experiment_name=w20260729_002_r01_late_checkpoint_analysis \
+  checkpoint=output/RHO_GS/rho_gs_lego_fixed_view_tile_stats_w20260728_003_r01_2026-07-28-19-21-37/checkpoints/final.pt \
+  grouping=visible_overlap_knn \
+  grouping.group_size=8
+```
+
+### 2026-07-30 — gpu-smoke-evidence
+
+- 상태: `awaiting-run`
+- Develop 검증용 최소 analyzer는 GPU에서 완료됐지만 공식 R01 조건을 실행한 것은 아니므로 Run 상태는 변경하지 않는다.
+- random tile-overlap anchor는 실제 sampled residual contributor를 보장하지 않아 K=2 pair가 zero Hessian을 만들 수 있음을 확인했다.
+- 동일 tile의 실제 gradient 상위 Gaussian pair에서는 raw off-diagonal Frobenius norm 642.5876과 normalized spectral coupling 0.9690을 확인했다.
+- 공식 R01 전에 contributor-aware 또는 fixed/oracle anchor 전략을 추가해 zero group 비율과 유효 group 수를 함께 기록해야 한다.
