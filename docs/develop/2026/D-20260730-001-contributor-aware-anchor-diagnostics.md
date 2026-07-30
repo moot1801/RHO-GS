@@ -101,6 +101,12 @@ Randomized score는 Rademacher vector `z`에 대해 `mean ||J_i^T z||²`로 계�
 - candidate count 12,284, candidate hash `6b78c7fbc5bc3105`, anchor 66,981, member 66,980, normalized spectral coupling 0.138625가 앞선 반복과 동일했다.
 - capture ratio 1.0, zero-group ratio 0, valid-pair ratio 1.0, failure record 0 byte를 확인했다.
 
+### 2026-07-30 — implementation-committed
+
+- 상태: `committed-gpu-verified`
+- contributor-aware anchor, zero-group 진단, artifact schema와 capture ratio 수치 수정이 commit `a6d60bdcb6aa7ae3be94776c6d5542e386dedd7d`에 기록됐다.
+- commit 직후 RHO_GS working tree가 clean인 상태에서 W-20260729-002/R01 공식 analyzer를 실행했다.
+
 ## 한계 및 주의
 
 - randomized score는 finite-probe 추정치이므로 probe count·seed가 다른 결과를 직접 비교하지 않는다.
