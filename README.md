@@ -1,3 +1,10 @@
+# RHO-GS
+
+Research implementation for relational Hessian optimization in 3D Gaussian Splatting.
+This branch is based on the upstream `FasterGSTestbed` variant and keeps its ablation-oriented structure.
+
+## Upstream Baseline Documentation
+
 # Faster Gaussian Splatting
 ![PyTorch](https://img.shields.io/badge/-PyTorch-EE4C2C?logo=PyTorch&logoColor=white)&nbsp;
 ![CUDA](https://img.shields.io/badge/-CUDA-76B900?logo=NVIDIA&logoColor=white)&nbsp;

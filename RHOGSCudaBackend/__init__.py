@@ -11,8 +11,8 @@ __install_command__ = [
 ]
 
 try:
-    from .FasterGSTestbedCudaBackend.torch_bindings.rasterization import diff_rasterize, RasterizerSettings
-    from .FasterGSTestbedCudaBackend.torch_bindings.adam import FusedAdam
+    from .RHOGSCudaBackend.torch_bindings.rasterization import diff_rasterize, RasterizerSettings
+    from .RHOGSCudaBackend.torch_bindings.adam import FusedAdam
     __all__ = ['diff_rasterize', 'RasterizerSettings', 'FusedAdam']
 except ImportError as e:
     raise Framework.ExtensionError(name=__extension_name__, install_command=__install_command__)

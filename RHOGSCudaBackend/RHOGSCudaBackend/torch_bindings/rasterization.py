@@ -2,7 +2,7 @@ from typing import NamedTuple, Any
 import torch
 from torch.autograd.function import once_differentiable
 
-from FasterGSTestbedCudaBackend import _C
+from RHOGSCudaBackend import _C
 
 
 class RasterizerSettings(NamedTuple):

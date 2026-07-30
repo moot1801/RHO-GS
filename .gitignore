@@ -21,3 +21,10 @@ backup/
 .pytest_cache/
 imgui.ini
 __pycache__/
+
+# Obsidian local workspace state
+**/.obsidian/app.json
+**/.obsidian/appearance.json
+**/.obsidian/core-plugins.json
+**/.obsidian/workspace*.json
+**/.obsidian/cache/

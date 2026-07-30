@@ -5,7 +5,7 @@ GLOBAL:
     RANDOM_SEED: 0
     ANOMALY_DETECTION: false
     FILTER_WARNINGS: true
-    METHOD_TYPE: FasterGSTestbed
+    METHOD_TYPE: RHO_GS
     DATASET_TYPE: MipNeRF360
 MODEL:
     SH_DEGREE: 3
@@ -21,7 +21,7 @@ RENDERER:
     SCALE_MODIFIER: 1.0
 TRAINING:
     LOAD_CHECKPOINT: null
-    MODEL_NAME: fastergstestbed_garden
+    MODEL_NAME: rho_gs_garden
     NUM_ITERATIONS: 30_000
     RUN_VALIDATION: false
     DATA:
@@ -46,7 +46,7 @@ TRAINING:
     WANDB:
         ACTIVATE: false
         ENTITY: null
-        PROJECT: faster_gs
+        PROJECT: rho_gs
         LOG_IMAGES: true
         INDEX_VALIDATION: -1
         INDEX_TRAINING: -1

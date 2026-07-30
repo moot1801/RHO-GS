@@ -1,7 +1,7 @@
-from Methods.FasterGSTestbed.Model import FasterGSTestbedModel
-from Methods.FasterGSTestbed.Renderer import FasterGSTestbedRenderer
-from Methods.FasterGSTestbed.Trainer import FasterGSTestbedTrainer
+from Methods.RHO_GS.Model import RHOGSModel
+from Methods.RHO_GS.Renderer import RHOGSRenderer
+from Methods.RHO_GS.Trainer import RHOGSTrainer
 
-MODEL = FasterGSTestbedModel
-RENDERER = FasterGSTestbedRenderer
-TRAINING_INSTANCE = FasterGSTestbedTrainer
+MODEL = RHOGSModel
+RENDERER = RHOGSRenderer
+TRAINING_INSTANCE = RHOGSTrainer

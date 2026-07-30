@@ -1,4 +1,4 @@
-"""FasterGSTestbed/Model.py"""
+"""RHO_GS/Model.py"""
 
 import math
 
@@ -11,7 +11,7 @@ from Datasets.utils import BasicPointCloud
 from Logging import Logger
 from Methods.Base.Model import BaseModel
 from Cameras.utils import quaternion_to_rotation_matrix
-from Methods.FasterGSTestbed.FasterGSTestbedCudaBackend import FusedAdam
+from Methods.RHO_GS.RHOGSCudaBackend import FusedAdam
 from Optim.adam_utils import replace_param_group_data, prune_param_groups, extend_param_groups, sort_param_groups
 from Optim.lr_utils import LRDecayPolicy
 from Optim.knn_utils import compute_root_mean_squared_knn_distances
@@ -336,14 +336,14 @@ class Gaussians(torch.nn.Module):
 @Framework.Configurable.configure(
     SH_DEGREE=3,
 )
-class FasterGSTestbedModel(BaseModel):
-    """Defines the FasterGSTestbed model."""
+class RHOGSModel(BaseModel):
+    """Defines the RHO-GS model."""
 
     def __init__(self, name: str = None) -> None:
         super().__init__(name)
         self.gaussians: Gaussians | None = None
 
-    def build(self) -> 'FasterGSTestbedModel':
+    def build(self) -> 'RHOGSModel':
         """Builds the model."""
         pretrained = self.num_iterations_trained > 0
         self.gaussians = Gaussians(self.SH_DEGREE, pretrained)
@@ -356,6 +356,6 @@ class FasterGSTestbedModel(BaseModel):
             return data
 
         # add method-specific comments
-        data['comments'] = ['SplatRenderMode: default', 'Generated with NeRFICG/FasterGSTestbed']
+        data['comments'] = ['SplatRenderMode: default', 'Generated with NeRFICG/RHO_GS']
 
         return data

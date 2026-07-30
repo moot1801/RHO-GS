@@ -1,4 +1,4 @@
-"""FasterGSTestbed/Loss.py"""
+"""RHO_GS/Loss.py"""
 
 import torch
 import torchmetrics
@@ -8,7 +8,7 @@ from Optim.Losses.Base import BaseLoss
 from Optim.Losses.DSSIM import fused_dssim
 
 
-class FasterGSTestbedLoss(BaseLoss):
+class RHOGSLoss(BaseLoss):
     def __init__(self, loss_config: ConfigParameterList) -> None:
         super().__init__()
         self.add_loss_metric('L1_Color', torch.nn.functional.l1_loss, loss_config.LAMBDA_L1)

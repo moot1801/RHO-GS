@@ -28,7 +28,6 @@ class Runtime:
             view=view,
             update_densification_info=False,
             bg_color=view.camera.background_color,
-            collect_tile_stats=False,
         )
 
     @torch.no_grad()

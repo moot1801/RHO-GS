@@ -1,4 +1,4 @@
-"""FasterGSTestbed/Renderer.py"""
+"""RHO_GS/Renderer.py"""
 
 import math
 
@@ -10,8 +10,8 @@ from Datasets.utils import View
 from Logging import Logger
 from Methods.Base.Renderer import BaseModel
 from Methods.Base.Renderer import BaseRenderer
-from Methods.FasterGSTestbed.Model import FasterGSTestbedModel
-from Methods.FasterGSTestbed.FasterGSTestbedCudaBackend import diff_rasterize, RasterizerSettings
+from Methods.RHO_GS.Model import RHOGSModel
+from Methods.RHO_GS.RHOGSCudaBackend import diff_rasterize, RasterizerSettings
 
 
 def extract_settings(
@@ -27,7 +27,7 @@ def extract_settings(
     use_separate_sorting: bool,
 ) -> RasterizerSettings:
     if not isinstance(view.camera, PerspectiveCamera):
-        raise Framework.RendererError('FasterGSTestbed renderer only supports perspective cameras')
+        raise Framework.RendererError('RHO-GS renderer only supports perspective cameras')
     if view.camera.distortion is not None:
         Logger.log_warning('found distortion parameters that will be ignored by the rasterizer')
     return RasterizerSettings(
@@ -64,15 +64,15 @@ def extract_settings(
     USE_SEPARATE_SORTING=False,
     SCALE_MODIFIER=1.0,
 )
-class FasterGSTestbedRenderer(BaseRenderer):
+class RHOGSRenderer(BaseRenderer):
     """Wrapper around the rasterization module from 3DGS."""
 
     def __init__(self, model: 'BaseModel') -> None:
-        super().__init__(model, [FasterGSTestbedModel])
+        super().__init__(model, [RHOGSModel])
         if not Framework.config.GLOBAL.GPU_INDICES:
-            raise Framework.RendererError('FasterGSTestbed renderer not implemented in CPU mode')
+            raise Framework.RendererError('RHO-GS renderer not implemented in CPU mode')
         if len(Framework.config.GLOBAL.GPU_INDICES) > 1:
-            Logger.log_warning(f'FasterGSTestbed renderer not implemented in multi-GPU mode: using GPU {Framework.config.GLOBAL.GPU_INDICES[0]}')
+            Logger.log_warning(f'RHO-GS renderer not implemented in multi-GPU mode: using GPU {Framework.config.GLOBAL.GPU_INDICES[0]}')
 
     def render_image(self, view: View, to_chw: bool = False, benchmark: bool = False) -> dict[str, torch.Tensor]:
         """Renders an image for a given view."""

@@ -1,4 +1,4 @@
-"""FasterGSTestbed/Trainer.py"""
+"""RHO_GS/Trainer.py"""
 
 import torch
 
@@ -8,8 +8,8 @@ from Datasets.utils import BasicPointCloud, apply_background_color
 from Logging import Logger
 from Methods.Base.GuiTrainer import GuiTrainer
 from Methods.Base.utils import pre_training_callback, training_callback, post_training_callback
-from Methods.FasterGSTestbed.Loss import FasterGSTestbedLoss
-from Methods.FasterGSTestbed.utils import enable_expandable_segments, carve
+from Methods.RHO_GS.Loss import RHOGSLoss
+from Methods.RHO_GS.utils import enable_expandable_segments, carve
 from Optim.Samplers.DatasetSamplers import DatasetSampler
 
 
@@ -52,8 +52,8 @@ from Optim.Samplers.DatasetSamplers import DatasetSampler
         USE_APEX=False,
     ),
 )
-class FasterGSTestbedTrainer(GuiTrainer):
-    """Defines the trainer for the FasterGSTestbed variant."""
+class RHOGSTrainer(GuiTrainer):
+    """Defines the trainer for the RHO-GS variant."""
 
     def __init__(self, **kwargs) -> None:
         self.requires_empty_cache = True
@@ -63,7 +63,7 @@ class FasterGSTestbedTrainer(GuiTrainer):
                 Logger.log_info('using "expandable_segments:True" with the torch cuda memory allocator')
         super().__init__(**kwargs)
         self.train_sampler = None
-        self.loss = FasterGSTestbedLoss(loss_config=self.LOSS)
+        self.loss = RHOGSLoss(loss_config=self.LOSS)
 
     @pre_training_callback(priority=50)
     @torch.no_grad()
