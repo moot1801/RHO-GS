@@ -1,0 +1,3 @@
+anchor_selection:
+  name: random_eligible
+  filter_group_members: false

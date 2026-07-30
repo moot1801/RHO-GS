@@ -7,7 +7,7 @@ from typing import Any
 import torch
 
 from ...registry import REGISTRIES
-from ...types import Group, GroupSet, RenderState
+from ...types import AnchorSet, Group, GroupSet, RenderState
 
 
 def _means(state: Any) -> torch.Tensor:
@@ -16,7 +16,15 @@ def _means(state: Any) -> torch.Tensor:
     return state.means
 
 
-def _anchors(config: dict[str, Any], count: int, device: torch.device, eligible: torch.Tensor | None = None) -> torch.Tensor:
+def _anchors(
+    config: dict[str, Any],
+    count: int,
+    device: torch.device,
+    eligible: torch.Tensor | None = None,
+    anchor_set: AnchorSet | None = None,
+) -> torch.Tensor:
+    if anchor_set is not None:
+        return torch.tensor(anchor_set.anchor_gaussian_ids, dtype=torch.long, device=device)
     candidates = torch.arange(count, device=device) if eligible is None else torch.nonzero(eligible, as_tuple=False).flatten()
     requested = int(config.get("sampled_anchor_count", candidates.numel()))
     maximum = int(config.get("maximum_groups", requested))
@@ -26,14 +34,22 @@ def _anchors(config: dict[str, Any], count: int, device: torch.device, eligible:
     return candidates[order]
 
 
-def _group_set(name: str, groups: list[Group], config: dict[str, Any]) -> GroupSet:
+def _group_set(name: str, groups: list[Group], config: dict[str, Any], anchor_set: AnchorSet | None = None) -> GroupSet:
+    common_metadata = {
+        "candidate_pool_size": int(config.get("candidate_pool_size", 0)),
+        "anchor_selection": anchor_set.strategy if anchor_set is not None else "grouping_internal_random",
+        "anchor_candidate_hash": anchor_set.candidate_hash if anchor_set is not None else None,
+        "member_contributor_filter": bool(anchor_set is not None and anchor_set.filter_group_members),
+    }
+    for group in groups:
+        group.metadata = {**common_metadata, **group.metadata}
     return GroupSet(
         strategy=name,
         groups=groups,
         seed=int(config.get("seed", 0)),
         overlapping=bool(config.get("overlapping", True)),
         directed=bool(config.get("directed", False)),
-        metadata={"candidate_pool_size": int(config.get("candidate_pool_size", 0))},
+        metadata=common_metadata,
     )
 
 
@@ -41,12 +57,25 @@ def _group_set(name: str, groups: list[Group], config: dict[str, Any]) -> GroupS
 class IndependentGrouping:
     name = "independent"
 
-    def build_groups(self, gaussian_state: Any, render_state: RenderState | None, view: Any, config: dict[str, Any]) -> GroupSet:
+    def build_groups(
+        self,
+        gaussian_state: Any,
+        render_state: RenderState | None,
+        view: Any,
+        config: dict[str, Any],
+        anchor_set: AnchorSet | None = None,
+    ) -> GroupSet:
         means = _means(gaussian_state)
         eligible = render_state.visible_mask if render_state is not None and config.get("visible_only", False) else None
-        anchors = _anchors(config, means.shape[0], means.device, eligible)
-        groups = [Group(i, int(anchor), (int(anchor),), (0.0,)) for i, anchor in enumerate(anchors.tolist())]
-        return _group_set(self.name, groups, config)
+        anchors = _anchors(config, means.shape[0], means.device, eligible, anchor_set)
+        groups = [Group(
+            i,
+            int(anchor),
+            (int(anchor),),
+            (0.0,),
+            metadata={"render_state": render_state.metadata if render_state is not None else None},
+        ) for i, anchor in enumerate(anchors.tolist())]
+        return _group_set(self.name, groups, config, anchor_set)
 
 
 class _KNNBase:
@@ -54,7 +83,14 @@ class _KNNBase:
     require_visible = False
     require_overlap = False
 
-    def build_groups(self, gaussian_state: Any, render_state: RenderState | None, view: Any, config: dict[str, Any]) -> GroupSet:
+    def build_groups(
+        self,
+        gaussian_state: Any,
+        render_state: RenderState | None,
+        view: Any,
+        config: dict[str, Any],
+        anchor_set: AnchorSet | None = None,
+    ) -> GroupSet:
         means = _means(gaussian_state)
         if (self.require_visible or self.require_overlap) and render_state is None:
             raise ValueError(f"{self.name} requires RenderState")
@@ -62,7 +98,10 @@ class _KNNBase:
         visibility_threshold = float(config.get("visibility_threshold", 0.0))
         if eligible is not None and visibility_threshold > 0.0 and hasattr(gaussian_state, "opacities"):
             eligible &= gaussian_state.opacities.detach().flatten() >= visibility_threshold
-        anchors = _anchors(config, means.shape[0], means.device, eligible)
+        anchors = _anchors(config, means.shape[0], means.device, eligible, anchor_set)
+        member_candidates: torch.Tensor | None = None
+        if anchor_set is not None and anchor_set.filter_group_members:
+            member_candidates = torch.tensor(anchor_set.candidate_gaussian_ids, dtype=torch.long, device=means.device)
         group_size = max(1, int(config.get("group_size", 1)))
         pool_size = max(group_size, int(config.get("candidate_pool_size", max(group_size * 4, 32))))
         distance_threshold = config.get("distance_threshold")
@@ -76,6 +115,10 @@ class _KNNBase:
             candidate_mask = torch.ones(means.shape[0], dtype=torch.bool, device=means.device)
             if self.require_visible:
                 candidate_mask &= eligible
+            if member_candidates is not None:
+                contributor_mask = torch.zeros_like(candidate_mask)
+                contributor_mask[member_candidates] = True
+                candidate_mask &= contributor_mask
             if not bool(config.get("overlapping", True)) and used:
                 used_ids = torch.tensor(sorted(used), dtype=torch.long, device=means.device)
                 candidate_mask[used_ids] = False
@@ -141,9 +184,13 @@ class _KNNBase:
                 projected_overlap=member_overlap,
                 shared_tile_counts=member_shared,
                 directed_edges=edges,
-                metadata={"distance_metric": "euclidean_world", "overlap_basis": "tile" if config.get("use_tile_overlap", True) else "pixel_bbox"},
+                metadata={
+                    "distance_metric": "euclidean_world",
+                    "overlap_basis": "tile" if config.get("use_tile_overlap", True) else "pixel_bbox",
+                    "render_state": render_state.metadata if render_state is not None else None,
+                },
             ))
-        return _group_set(self.name, groups, config)
+        return _group_set(self.name, groups, config, anchor_set)
 
 
 @REGISTRIES["grouping"].register("knn_3d")

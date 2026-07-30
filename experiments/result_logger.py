@@ -56,6 +56,7 @@ class ResultLogger:
             "scene": self.config.get("scene"),
             "seed": self.config.get("seed"),
             "grouping": self.config["grouping"]["name"],
+            "anchor_selection": self.config["anchor_selection"]["name"],
             "group_size": self.config["grouping"].get("group_size"),
             "attribute_block": self.config["attributes"]["name"],
             "solver": self.config["solver"]["name"],
@@ -85,5 +86,5 @@ class ResultLogger:
             writer.writerows(enriched)
 
     def initialize_expected_artifacts(self) -> None:
-        for filename in ("groups.jsonl", "coupling_metrics.csv", "one_step_results.csv", "rollout_metrics.csv", "timing.csv", "memory.csv", "failures.jsonl"):
+        for filename in ("anchors.jsonl", "groups.jsonl", "group_diagnostics.csv", "coupling_metrics.csv", "one_step_results.csv", "rollout_metrics.csv", "timing.csv", "memory.csv", "failures.jsonl"):
             (self.directory / filename).touch(exist_ok=True)

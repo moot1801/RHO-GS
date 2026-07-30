@@ -4,7 +4,7 @@ import unittest
 
 import torch
 
-from experiments.coupling.curvature import GaussNewtonAssembler
+from experiments.coupling.curvature import GaussNewtonAssembler, coupling_capture_ratio
 from experiments.coupling.jacobian import FiniteDifferenceJacobian, RepeatedVJPJacobian, jacobian_relative_error
 from experiments.coupling.residuals import RGBL2SampledResidual
 
@@ -42,6 +42,13 @@ class JacobianCurvatureTest(unittest.TestCase):
         self.assertLess(curvature.metadata["symmetry_relative_error"], 1.0e-12)
         self.assertGreaterEqual(float(torch.linalg.eigvalsh(curvature.hessian).min()), -1.0e-10)
         self.assertTrue(torch.allclose(curvature.diagonal_blocks[0], curvature.hessian[:3, :3]))
+
+    def test_capture_ratio_preserves_small_nonzero_energy(self):
+        hessian = torch.zeros(6, 6, dtype=torch.float32)
+        hessian[:3, 3:] = torch.eye(3) * 1.0e-4
+        hessian[3:, :3] = hessian[:3, 3:].T
+        self.assertEqual(coupling_capture_ratio(hessian, [(0, 1)], 3), 1.0)
+        self.assertEqual(coupling_capture_ratio(torch.zeros_like(hessian), [(0, 1)], 3), 0.0)
 
 
 if __name__ == "__main__":

@@ -1,5 +1,10 @@
 experiment_name: lego_position_reference
 scene: lego
+anchor_selection:
+  name: random_contributor
+  sampled_anchor_count: 8
+  filter_group_members: true
+  probe_count: 4
 grouping:
   name: visible_overlap_knn
   group_size: 8

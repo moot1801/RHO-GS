@@ -3,20 +3,23 @@
 from __future__ import annotations
 
 import copy
+import hashlib
 from dataclasses import dataclass
+from pathlib import Path
 from time import perf_counter
 from typing import Any
 
 import torch
 
 from ..config import compose_config
-from ..coupling import aggregation, acceptance, curvature, grouping, jacobian, parameter_blocks, residuals, solvers  # noqa: F401
+from ..coupling import aggregation, acceptance, anchor_selection, curvature, grouping, jacobian, parameter_blocks, residuals, solvers  # noqa: F401
+from ..coupling.anchor_selection import estimate_position_jacobian_energy
 from ..coupling.curvature import GaussNewtonAssembler
 from ..evaluation import select_audit_views
 from ..evaluation import PhaseTimer
 from ..registry import REGISTRIES
 from ..sampling import build_render_state, sample_top_tiles_and_pixels
-from ..types import CurvatureData, Group, GroupSet, JacobianData, RenderState, ResidualData
+from ..types import AnchorSet, CurvatureData, Group, GroupSet, JacobianData, RenderState, ResidualData
 
 
 @dataclass(slots=True)
@@ -28,6 +31,7 @@ class PreparedExperiment:
     target: torch.Tensor
     render_state: RenderState
     pixel_indices: torch.Tensor
+    anchor_set: AnchorSet
     group_set: GroupSet
     residual_data: ResidualData
     timing_records: list[Any]
@@ -38,6 +42,7 @@ def parse_config(argv: list[str]) -> dict[str, Any]:
     if not config.get("checkpoint"):
         raise ValueError("checkpoint=<path> is required")
     config["grouping"]["seed"] = int(config.get("seed", 0))
+    config["anchor_selection"]["seed"] = int(config.get("seed", 0))
     return config
 
 
@@ -76,13 +81,19 @@ def prepare(config: dict[str, Any]) -> PreparedExperiment:
         global_count=int(evaluation["global_audit_view_count"]),
     )
     primary = audits["primary"][0][2]
-    prepared = prepare_view(config, runtime, audits, primary)
+    prepared = prepare_view(config, runtime, audits, primary, int(evaluation["primary_view_id"]))
     from ..types import TimingRecord
     prepared.timing_records.insert(0, TimingRecord("runtime_setup", setup_ms, "cpu", False, setup_ms))
     return prepared
 
 
-def prepare_view(config: dict[str, Any], runtime: Any, audits: dict[str, list[tuple[str, int, object]]], primary: Any) -> PreparedExperiment:
+def prepare_view(
+    config: dict[str, Any],
+    runtime: Any,
+    audits: dict[str, list[tuple[str, int, object]]],
+    primary: Any,
+    view_id: int | None = None,
+) -> PreparedExperiment:
     from ..runtime import target_for_view
 
     evaluation = config["evaluation"]
@@ -94,12 +105,6 @@ def prepare_view(config: dict[str, Any], runtime: Any, audits: dict[str, list[tu
         tile_ids, pixel_ids = sample_top_tiles_and_pixels(state, {**evaluation, "seed": int(config.get("seed", 0))})
         restricted_state = _restrict_to_tiles(state, tile_ids)
     timing_records.append(timer.record)
-    with PhaseTimer("group_construction", device=device) as timer:
-        grouping_strategy = REGISTRIES["grouping"].create(config["grouping"]["name"])
-        group_set = grouping_strategy.build_groups(runtime.model.gaussians, restricted_state, primary, config["grouping"])
-    timing_records.append(timer.record)
-    if not group_set.groups:
-        raise RuntimeError("grouping produced no groups for the sampled tiles")
     with PhaseTimer("render_forward", device=device) as timer:
         with torch.no_grad():
             prediction = runtime.training_render(primary)
@@ -108,8 +113,57 @@ def prepare_view(config: dict[str, Any], runtime: Any, audits: dict[str, list[tu
         residual_provider = REGISTRIES["residual"].create(config["residual"]["name"])
         residual_data = residual_provider.build(prediction, target, pixel_ids)
     timing_records.append(timer.record)
-    residual_data.metadata.update({"sampled_tile_ids": tile_ids.tolist(), "view_id": int(evaluation["primary_view_id"])})
-    return PreparedExperiment(config, runtime, audits, primary, target, restricted_state, pixel_ids, group_set, residual_data, timing_records)
+    effective_view_id = int(evaluation["primary_view_id"]) if view_id is None else int(view_id)
+    residual_data.metadata.update({
+        "sampled_tile_ids": [int(value) for value in tile_ids.tolist()],
+        "sampled_pixel_ids": [int(value) for value in pixel_ids.tolist()],
+        "view_id": effective_view_id,
+    })
+    anchor_strategy = REGISTRIES["anchor_selection"].create(config["anchor_selection"]["name"])
+    contribution_scores = None
+    if anchor_strategy.requires_contribution_scores:
+        with PhaseTimer("contribution_probe", device=device) as timer:
+            contribution_scores, probe_metadata = estimate_position_jacobian_energy(
+                lambda: runtime.training_render(primary),
+                runtime.model.gaussians.means,
+                residual_data,
+                config["anchor_selection"],
+            )
+        timing_records.append(timer.record)
+    else:
+        probe_metadata = {"estimator": "not_required"}
+    with PhaseTimer("anchor_selection", device=device) as timer:
+        anchor_set = anchor_strategy.select(
+            runtime.model.gaussians,
+            restricted_state,
+            primary,
+            config["anchor_selection"],
+            contribution_scores,
+        )
+    timing_records.append(timer.record)
+    anchor_set.metadata.update(probe_metadata)
+    with PhaseTimer("group_construction", device=device) as timer:
+        grouping_strategy = REGISTRIES["grouping"].create(config["grouping"]["name"])
+        group_set = grouping_strategy.build_groups(runtime.model.gaussians, restricted_state, primary, config["grouping"], anchor_set)
+    timing_records.append(timer.record)
+    if not group_set.groups:
+        raise RuntimeError("grouping produced no groups for the sampled anchors")
+    return PreparedExperiment(config, runtime, audits, primary, target, restricted_state, pixel_ids, anchor_set, group_set, residual_data, timing_records)
+
+
+def checkpoint_file_metadata(path: str | Path) -> dict[str, Any]:
+    checkpoint = Path(path)
+    digest = hashlib.sha256()
+    with checkpoint.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    stat = checkpoint.stat()
+    return {
+        "path": str(checkpoint),
+        "sha256": digest.hexdigest(),
+        "size_bytes": stat.st_size,
+        "mtime_ns": stat.st_mtime_ns,
+    }
 
 
 def union_gaussian_ids(group_set: GroupSet) -> tuple[int, ...]:

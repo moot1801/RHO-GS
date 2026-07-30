@@ -7,6 +7,7 @@ from dataclasses import asdict
 
 import torch
 
+from ..coupling.diagnostics import diagnose_groups
 from ..evaluation import MemoryTracker, PhaseTimer, image_metrics
 from ..registry import REGISTRIES
 from ..result_logger import ResultLogger
@@ -14,6 +15,7 @@ from ..runtime import target_for_view
 from .common import (
     apply_remaining_attribute_adam,
     aggregate_predicted_reduction,
+    checkpoint_file_metadata,
     compute_union_jacobian,
     parse_config,
     prepare,
@@ -32,6 +34,7 @@ def main(argv: list[str] | None = None) -> int:
     rollout_rows: list[dict] = []
     timing_rows: list[dict] = []
     memory_rows: list[dict] = []
+    group_diagnostic_rows: list[dict] = []
     accepted_count = 0
     numerical_failures = 0
     try:
@@ -54,15 +57,37 @@ def main(argv: list[str] | None = None) -> int:
         for rollout_iteration in range(iterations):
             view_id = sequence[rollout_iteration % len(sequence)]
             with MemoryTracker(device) as memory, PhaseTimer("total_rollout_step", device=device) as total_timer:
-                prepared = prepare_view(config, runtime, initial.audit_views, train_views[view_id])
+                prepared = prepare_view(config, runtime, initial.audit_views, train_views[view_id], view_id)
                 timing_rows.extend({"rollout_iteration": rollout_iteration + 1, **asdict(record)} for record in prepared.timing_records)
                 step_snapshot = snapshot_model_and_optimizer(runtime)
                 position_snapshot = block.snapshot(runtime.model.gaussians, torch.arange(initial_gaussian_count, device=device))
                 try:
                     ids = union_gaussian_ids(prepared.group_set)
+                    logger.append_jsonl("anchors.jsonl", {
+                        "rollout_iteration": rollout_iteration + 1,
+                        "view_id": view_id,
+                        **prepared.anchor_set.to_record(),
+                    })
+                    for group in prepared.group_set.groups:
+                        logger.append_jsonl("groups.jsonl", {
+                            "rollout_iteration": rollout_iteration + 1,
+                            "view_id": view_id,
+                            **group.to_record(),
+                        })
                     with PhaseTimer("jacobian_and_curvature", device=device) as phase_timer:
                         union_jacobian, union_curvature = compute_union_jacobian(prepared, ids)
                     timing_rows.append({"rollout_iteration": rollout_iteration + 1, **asdict(phase_timer.record)})
+                    step_diagnostics, _ = diagnose_groups(
+                        union_jacobian,
+                        prepared.group_set,
+                        int(prepared.residual_data.metadata["channels"]),
+                        config["diagnostics"],
+                    )
+                    group_diagnostic_rows.extend({
+                        "rollout_iteration": rollout_iteration + 1,
+                        "view_id": view_id,
+                        **row,
+                    } for row in step_diagnostics)
                     proposals = []
                     solve_time = 0.0
                     solver_config = {**config["solver"], "initial_damping": damping}
@@ -147,10 +172,11 @@ def main(argv: list[str] | None = None) -> int:
                 raise FloatingPointError("NaN/Inf detected in model parameters")
 
         logger.write_csv("rollout_metrics.csv", rollout_rows)
+        logger.write_csv("group_diagnostics.csv", group_diagnostic_rows)
         logger.write_csv("timing.csv", timing_rows)
         logger.write_csv("memory.csv", memory_rows)
         logger.write_json("checkpoint_metadata.json", {
-            "path": str(runtime.checkpoint_path),
+            **checkpoint_file_metadata(runtime.checkpoint_path),
             "iteration": runtime.model.num_iterations_trained,
             "optimizer_state_restored": runtime.optimizer_state_restored,
             "initial_gaussian_count": initial_gaussian_count,
@@ -165,6 +191,13 @@ def main(argv: list[str] | None = None) -> int:
             "average_allocated_bytes": sum(row["allocated_bytes"] for row in memory_rows) / max(len(memory_rows), 1),
             "peak_allocated_bytes": max((row["peak_allocated_bytes"] for row in memory_rows), default=0),
             "peak_reserved_bytes": max((row["peak_reserved_bytes"] for row in memory_rows), default=0),
+            "group_diagnostics": {
+                "group_count": len(group_diagnostic_rows),
+                "zero_group_count": sum(bool(row["zero_group"]) for row in group_diagnostic_rows),
+                "valid_group_count": sum(row["classification"] == "valid" for row in group_diagnostic_rows),
+                "zero_group_ratio": sum(bool(row["zero_group"]) for row in group_diagnostic_rows) / max(len(group_diagnostic_rows), 1),
+                "valid_group_ratio": sum(row["classification"] == "valid" for row in group_diagnostic_rows) / max(len(group_diagnostic_rows), 1),
+            },
         })
         print(logger.directory)
         return 0

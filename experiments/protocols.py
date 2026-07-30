@@ -6,13 +6,34 @@ from typing import Any, Protocol
 
 import torch
 
-from .types import CurvatureData, Group, GroupSet, JacobianData, RenderState, ResidualData, UpdateProposal
+from .types import AnchorSet, CurvatureData, Group, GroupSet, JacobianData, RenderState, ResidualData, UpdateProposal
+
+
+class AnchorSelectionStrategy(Protocol):
+    name: str
+    requires_contribution_scores: bool
+
+    def select(
+        self,
+        gaussian_state: Any,
+        render_state: RenderState,
+        view: Any,
+        config: dict[str, Any],
+        contribution_scores: torch.Tensor | None = None,
+    ) -> AnchorSet: ...
 
 
 class GroupingStrategy(Protocol):
     name: str
 
-    def build_groups(self, gaussian_state: Any, render_state: RenderState | None, view: Any, config: dict[str, Any]) -> GroupSet: ...
+    def build_groups(
+        self,
+        gaussian_state: Any,
+        render_state: RenderState | None,
+        view: Any,
+        config: dict[str, Any],
+        anchor_set: AnchorSet | None = None,
+    ) -> GroupSet: ...
 
 
 class ParameterBlock(Protocol):

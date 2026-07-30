@@ -7,7 +7,7 @@ import torch
 from experiments.coupling.grouping import KNN3DGrouping, VisibleOverlapKNNGrouping
 from experiments.coupling.parameter_blocks import PositionBlock
 from experiments.sampling import sample_top_tiles_and_pixels
-from experiments.types import RenderState
+from experiments.types import AnchorSet, RenderState
 
 
 class FakeGaussians:
@@ -47,6 +47,22 @@ class GroupingParameterTest(unittest.TestCase):
         for group in result.groups:
             if group.anchor_gaussian_id in (0, 1):
                 self.assertNotIn(2, group.member_gaussian_ids)
+
+    def test_anchor_set_can_filter_group_members(self):
+        config = {"group_size": 3, "candidate_pool_size": 4, "minimum_shared_tiles": 1, "overlapping": True}
+        anchors = AnchorSet(
+            strategy="test",
+            anchor_gaussian_ids=(0,),
+            scores=(1.0,),
+            seed=0,
+            candidate_gaussian_ids=(0, 1),
+            candidate_hash="test",
+            filter_group_members=True,
+        )
+        result = VisibleOverlapKNNGrouping().build_groups(FakeGaussians(), render_state(), None, config, anchors)
+        self.assertEqual(result.groups[0].member_gaussian_ids, (0, 1))
+        self.assertEqual(result.groups[0].metadata["anchor_candidate_hash"], "test")
+        self.assertTrue(result.groups[0].metadata["member_contributor_filter"])
 
     def test_snapshot_update_restore_and_clip(self):
         gaussians = FakeGaussians()

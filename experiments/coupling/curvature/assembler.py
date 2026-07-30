@@ -75,4 +75,6 @@ def coupling_capture_ratio(hessian: torch.Tensor, groups: list[tuple[int, ...]],
             total += energy
             if (i, j) in included:
                 captured += energy
-    return float((captured / total.clamp_min(torch.finfo(hessian.dtype).eps)).item())
+    if float(total.item()) == 0.0:
+        return 0.0
+    return float((captured / total).item())

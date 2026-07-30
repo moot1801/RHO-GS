@@ -7,12 +7,14 @@ from dataclasses import asdict
 
 import torch
 
+from ..coupling.diagnostics import diagnose_groups
 from ..evaluation import MemoryTracker, PhaseTimer
 from ..registry import REGISTRIES
 from ..result_logger import ResultLogger
 from .common import (
     apply_remaining_attribute_adam,
     aggregate_predicted_reduction,
+    checkpoint_file_metadata,
     compute_union_jacobian,
     evaluate_views,
     parse_config,
@@ -56,11 +58,18 @@ def main(argv: list[str] | None = None) -> int:
             before_audit = evaluate_views(prepared)
         timing_rows.append(asdict(timer.record))
         ids = union_gaussian_ids(prepared.group_set)
+        logger.append_jsonl("anchors.jsonl", {"view_id": config["evaluation"]["primary_view_id"], **prepared.anchor_set.to_record()})
         for group in prepared.group_set.groups:
             logger.append_jsonl("groups.jsonl", {"view_id": config["evaluation"]["primary_view_id"], **group.to_record()})
         with PhaseTimer("jacobian_and_curvature", device=device) as timer:
             union_jacobian, union_curvature = compute_union_jacobian(prepared, ids)
         timing_rows.append(asdict(timer.record))
+        diagnostic_rows, diagnostic_summary = diagnose_groups(
+            union_jacobian,
+            prepared.group_set,
+            int(prepared.residual_data.metadata["channels"]),
+            config["diagnostics"],
+        )
 
         block = REGISTRIES["parameter_block"].create(config["attributes"]["name"])
         solver = REGISTRIES["solver"].create(config["solver"]["name"])
@@ -150,14 +159,21 @@ def main(argv: list[str] | None = None) -> int:
         timing_rows.append(asdict(total_timer.record))
         memory_rows.append({"phase": "total_counterfactual", **asdict(total_memory.record)})
         logger.write_csv("one_step_results.csv", result_rows)
+        logger.write_csv("group_diagnostics.csv", diagnostic_rows)
         logger.write_csv("timing.csv", timing_rows)
         logger.write_csv("memory.csv", memory_rows)
         logger.write_json("checkpoint_metadata.json", {
-            "path": str(runtime.checkpoint_path),
+            **checkpoint_file_metadata(runtime.checkpoint_path),
             "iteration": runtime.model.num_iterations_trained,
             "optimizer_state_restored": runtime.optimizer_state_restored,
         })
-        logger.write_json("summary.json", {"status": "completed", **result_rows[0], "audit_view_ids": list(before_audit)})
+        logger.write_json("summary.json", {
+            "status": "completed",
+            **result_rows[0],
+            "audit_view_ids": list(before_audit),
+            "anchor_selection": prepared.anchor_set.to_record(),
+            "group_diagnostics": diagnostic_summary,
+        })
         print(logger.directory)
         return 0
     except Exception as error:

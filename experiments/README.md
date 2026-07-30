@@ -6,7 +6,7 @@
 
 | 완료 기능 | 상태 |
 |---|---|
-| Registry 기반 grouping/parameter/residual/Jacobian/curvature/solver/aggregation/acceptance 교체 | 완료 |
+| Registry 기반 anchor/grouping/parameter/residual/Jacobian/curvature/solver/aggregation/acceptance 교체 | 완료 |
 | Position parameter block | 완료 |
 | independent, kNN 3D, visible kNN, visible-overlap kNN | 완료 |
 | RGB L2 전체·sampled residual | 완료 |
@@ -15,6 +15,7 @@
 | per-Gaussian/group GN·LM, Adam state adapter | 완료 |
 | one-step counterfactual, fixed-topology rollout | reference 구현 완료 |
 | optimizer/RNG/sampler portable checkpoint | 완료 |
+| contributor-aware anchor와 zero-group 진단 | 완료 |
 | oracle JᵀJ grouping, 추가 attribute, CUDA 최적화 | 미구현 |
 
 ## 실행 환경
@@ -34,6 +35,7 @@ python -m Methods.RHO_GS.experiments.runners.analyze_checkpoint \
   experiment=lego_position_reference \
   experiment_name=w20260729_002_r01_late_checkpoint_analysis \
   checkpoint=output/RHO_GS/rho_gs_lego_fixed_view_tile_stats_w20260728_003_r01_2026-07-28-19-21-37/checkpoints/final.pt \
+  anchor_selection=random_contributor \
   grouping=visible_overlap_knn \
   grouping.group_size=8 \
   attributes=position
@@ -91,10 +93,33 @@ rollout은 densify/clone/split/prune/opacity reset/SH 증가 callback을 호출�
 | image scale | 0.25× | dataset 로딩 시 camera/image를 함께 축소 |
 | tile | top 2 | 근사 footprint 등록 수가 큰 tile |
 | pixel | tile당 16 | seed 고정 uniform sample |
-| anchor | 8 | sampled tile과 겹치는 visible Gaussian에서 seed 고정 선택 |
+| anchor | 8 | sampled pixel contributor 모집단에서 seed 고정 uniform 선택 |
 | footprint | isotropic 3σ | `max(scale) × focal / depth` 보수적 근사 |
 
-visible-overlap grouping은 현재 rasterizer가 실제 생성한 Gaussian ID 목록이 아니라 위 projected footprint 근사를 사용한다. 이 차이는 `groups.jsonl` metadata에 기록된다.
+`random_contributor`는 Rademacher VJP로 Gaussian별 sampled position Jacobian energy `||J_i||_F²`를 추정하고, threshold를 넘는 contributor 중 uniform random anchor를 고른다. `filter_group_members=true`이면 group member도 같은 contributor 모집단으로 제한한다. 정확한 group Jacobian과 Hessian은 이후 기존 reference provider로 다시 계산하므로 probe 점수 자체를 coupling 값으로 사용하지 않는다.
+
+| anchor strategy | 용도 |
+|---|---|
+| `random_eligible` | 기존 geometry-visible 모집단 기준선 |
+| `fixed` | checkpoint-local ID 재현·진단 |
+| `random_contributor` | 편향을 줄인 기본 coupling 분석 |
+| `contribution_topk` | 상위 기여 Gaussian 분석 전용; `analysis_only` |
+
+visible-overlap grouping의 공간 overlap은 여전히 rasterizer instance ID가 아니라 projected footprint 근사를 사용한다. anchor의 sampled residual 기여 여부와 공간 overlap 근사는 서로 다른 조건이며 각각 `anchors.jsonl`과 `groups.jsonl`에 기록된다.
+
+### Zero group 해석
+
+`group_diagnostics.csv`는 zero group도 삭제하지 않고 다음 상태로 분류한다.
+
+| 분류 | 의미 |
+|---|---|
+| `anchor_zero` | exact sampled Jacobian에서 anchor block이 0 |
+| `member_zero` | anchor는 active지만 비교할 active member가 없음 |
+| `no_shared_support` | 양쪽 block은 active지만 같은 sampled pixel에 기여하지 않음 |
+| `small_offdiagonal` | shared support는 있으나 설정 threshold보다 작은 off-diagonal |
+| `valid` | shared support와 유효 off-diagonal pair 존재 |
+
+전체 group 수, zero/valid group 비율, valid pair 비율은 `summary.json`에 함께 저장한다. zero group을 누락한 조건부 결과만으로 grouping을 평가하면 selection bias가 생길 수 있으므로 전체 통계를 기본 보고값으로 사용한다.
 
 ## 결과 구조
 
@@ -103,7 +128,9 @@ output/RHO_GS/experiments/<experiment-id>/
 ├── resolved_config.yaml
 ├── environment.json
 ├── checkpoint_metadata.json
+├── anchors.jsonl
 ├── groups.jsonl
+├── group_diagnostics.csv
 ├── coupling_metrics.csv
 ├── one_step_results.csv
 ├── rollout_metrics.csv
@@ -153,6 +180,8 @@ class MyGrouping:
 
 핵심 runner에 새 `if/elif`를 추가할 필요가 없다.
 
+Anchor 전략은 `REGISTRIES["anchor_selection"]`에 등록한다. contributor score가 필요한 전략은 `requires_contribution_scores=True`를 선언하고 `select(..., contribution_scores)`에서 명시적 candidate population을 반환한다. `AnchorSet` artifact에는 선택 ID/점수, seed, candidate count/hash가 저장되며 전체 candidate ID는 메모리에서 grouping filter에만 사용한다.
+
 ## 수치 검증
 
 ```bash
@@ -170,4 +199,5 @@ class MyGrouping:
 - `oracle_jtj_topk`와 optimized CUDA 경로는 Priority 4로 남겨 두었다.
 - one-step/rollout GPU 장면 통합은 실제 실행 전까지 `미확인`이다. 근거 구현은 `experiments/runners/`이며 CPU 수치 test만 완료됐다.
 - output의 Gaussian ID는 해당 checkpoint/snapshot 내부 index다. topology가 다른 checkpoint끼리 직접 identity로 대응시키지 않는다.
-- tile/footprint overlap 기반 random anchor는 실제 sampled residual 기여를 보장하지 않으므로 zero Jacobian group이 생성될 수 있다. zero group을 실패로 누락하지 말고 기록하며 contributor-aware 또는 oracle anchor는 별도 전략으로 추가해야 한다.
+- randomized VJP score는 유한 probe 추정치이며 exact per-Gaussian Jacobian norm이 아니다. probe count·seed·threshold를 비교 실험에서 고정한다.
+- `contribution_topk`는 기여도가 큰 표본으로 분포를 편향시키므로 upper-bound/진단 결과로만 해석한다.

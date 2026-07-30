@@ -9,6 +9,34 @@ import torch
 
 
 @dataclass(slots=True)
+class AnchorSet:
+    strategy: str
+    anchor_gaussian_ids: tuple[int, ...]
+    scores: tuple[float, ...]
+    seed: int
+    candidate_gaussian_ids: tuple[int, ...]
+    candidate_hash: str
+    filter_group_members: bool = False
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+    @property
+    def candidate_count(self) -> int:
+        return len(self.candidate_gaussian_ids)
+
+    def to_record(self) -> dict[str, Any]:
+        return {
+            "strategy": self.strategy,
+            "anchor_gaussian_ids": self.anchor_gaussian_ids,
+            "scores": self.scores,
+            "seed": self.seed,
+            "candidate_count": self.candidate_count,
+            "candidate_hash": self.candidate_hash,
+            "filter_group_members": self.filter_group_members,
+            "metadata": self.metadata,
+        }
+
+
+@dataclass(slots=True)
 class Group:
     group_id: int
     anchor_gaussian_id: int

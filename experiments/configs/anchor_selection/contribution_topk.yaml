@@ -1,0 +1,3 @@
+anchor_selection:
+  name: contribution_topk
+  filter_group_members: true

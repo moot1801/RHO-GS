@@ -1,0 +1,4 @@
+anchor_selection:
+  name: fixed
+  fixed_ids: []
+  require_geometry_eligible: true

@@ -5,6 +5,18 @@ scene: lego
 seed: 0
 device: cuda
 output_root: output/RHO_GS/experiments
+anchor_selection:
+  name: random_eligible
+  sampled_anchor_count: 8
+  maximum_anchors: 8
+  opacity_threshold: 0.0
+  filter_group_members: false
+  probe_count: 4
+  probe_seed: 0
+  absolute_score_threshold: 0.0
+  relative_score_threshold: 1.0e-8
+  fixed_ids: []
+  require_geometry_eligible: true
 grouping:
   name: visible_overlap_knn
   group_size: 8
@@ -55,6 +67,11 @@ evaluation:
   pixels_per_tile: 16
   tile_size: 16
   anchor_count: 8
+diagnostics:
+  jacobian_block_absolute_threshold: 0.0
+  jacobian_block_relative_threshold: 1.0e-8
+  pixel_support_threshold: 0.0
+  offdiagonal_fro_threshold: 0.0
 benchmark:
   iterations: 100
   fixed_topology: true
