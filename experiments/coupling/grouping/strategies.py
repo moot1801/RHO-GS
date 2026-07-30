@@ -7,7 +7,7 @@ from typing import Any
 import torch
 
 from ...registry import REGISTRIES
-from ...types import AnchorSet, Group, GroupSet, RenderState
+from ...types import AnchorSet, GaussianUniverse, Group, GroupSet, RenderState
 
 
 def _means(state: Any) -> torch.Tensor:
@@ -34,12 +34,20 @@ def _anchors(
     return candidates[order]
 
 
-def _group_set(name: str, groups: list[Group], config: dict[str, Any], anchor_set: AnchorSet | None = None) -> GroupSet:
+def _group_set(
+    name: str,
+    groups: list[Group],
+    config: dict[str, Any],
+    anchor_set: AnchorSet | None = None,
+    universe: GaussianUniverse | None = None,
+) -> GroupSet:
     common_metadata = {
         "candidate_pool_size": int(config.get("candidate_pool_size", 0)),
         "anchor_selection": anchor_set.strategy if anchor_set is not None else "grouping_internal_random",
         "anchor_candidate_hash": anchor_set.candidate_hash if anchor_set is not None else None,
         "member_contributor_filter": bool(anchor_set is not None and anchor_set.filter_group_members),
+        "universe_strategy": None if universe is None else universe.strategy,
+        "universe_hash": None if universe is None else universe.gaussian_id_hash,
     }
     for group in groups:
         group.metadata = {**common_metadata, **group.metadata}
@@ -53,6 +61,15 @@ def _group_set(name: str, groups: list[Group], config: dict[str, Any], anchor_se
     )
 
 
+def _validate_universe_anchors(anchors: torch.Tensor, universe: GaussianUniverse | None) -> None:
+    if universe is None:
+        return
+    allowed = set(universe.gaussian_ids)
+    outside = [int(value) for value in anchors.tolist() if int(value) not in allowed]
+    if outside:
+        raise ValueError(f"anchor IDs outside fixed universe: {outside}")
+
+
 @REGISTRIES["grouping"].register("independent")
 class IndependentGrouping:
     name = "independent"
@@ -64,10 +81,12 @@ class IndependentGrouping:
         view: Any,
         config: dict[str, Any],
         anchor_set: AnchorSet | None = None,
+        universe: GaussianUniverse | None = None,
     ) -> GroupSet:
         means = _means(gaussian_state)
         eligible = render_state.visible_mask if render_state is not None and config.get("visible_only", False) else None
         anchors = _anchors(config, means.shape[0], means.device, eligible, anchor_set)
+        _validate_universe_anchors(anchors, universe)
         groups = [Group(
             i,
             int(anchor),
@@ -75,7 +94,62 @@ class IndependentGrouping:
             (0.0,),
             metadata={"render_state": render_state.metadata if render_state is not None else None},
         ) for i, anchor in enumerate(anchors.tolist())]
-        return _group_set(self.name, groups, config, anchor_set)
+        return _group_set(self.name, groups, config, anchor_set, universe)
+
+
+@REGISTRIES["grouping"].register("random_in_universe")
+class RandomInUniverseGrouping:
+    name = "random_in_universe"
+
+    def build_groups(
+        self,
+        gaussian_state: Any,
+        render_state: RenderState | None,
+        view: Any,
+        config: dict[str, Any],
+        anchor_set: AnchorSet | None = None,
+        universe: GaussianUniverse | None = None,
+    ) -> GroupSet:
+        del view
+        if universe is None:
+            raise ValueError("random_in_universe grouping requires a fixed universe")
+        means = _means(gaussian_state)
+        anchors = _anchors(config, means.shape[0], means.device, None, anchor_set)
+        _validate_universe_anchors(anchors, universe)
+        candidates = torch.tensor(universe.gaussian_ids, dtype=torch.long, device=means.device)
+        if anchor_set is not None and anchor_set.filter_group_members:
+            contributor_ids = set(anchor_set.candidate_gaussian_ids)
+            candidates = torch.tensor(
+                [value for value in universe.gaussian_ids if value in contributor_ids],
+                dtype=torch.long,
+                device=means.device,
+            )
+        visible_only = bool(config.get("visible_only", False))
+        if visible_only:
+            if render_state is None:
+                raise ValueError("random_in_universe visible_only grouping requires RenderState")
+            candidates = candidates[render_state.visible_mask.index_select(0, candidates)]
+        group_size = max(1, int(config.get("group_size", 1)))
+        groups: list[Group] = []
+        for group_id, anchor_tensor in enumerate(anchors):
+            anchor = int(anchor_tensor.item())
+            others = candidates[candidates != anchor]
+            generator = torch.Generator(device="cpu").manual_seed(int(config.get("seed", 0)) + group_id)
+            order = torch.randperm(others.numel(), generator=generator, device="cpu")[:max(0, group_size - 1)].to(others.device)
+            sampled = others.index_select(0, order)
+            members = torch.cat((anchor_tensor.reshape(1), sampled))
+            member_list = tuple(int(value) for value in members.tolist())
+            distances = torch.linalg.vector_norm(means.index_select(0, members) - means[anchor], dim=-1)
+            groups.append(Group(
+                group_id=group_id,
+                anchor_gaussian_id=anchor,
+                member_gaussian_ids=member_list,
+                construction_scores=tuple(float(value) for value in distances.detach().cpu().tolist()),
+                visible=tuple(bool(render_state.visible_mask[value]) for value in member_list) if render_state is not None else (),
+                directed_edges=tuple((min(anchor, value), max(anchor, value)) for value in member_list if value != anchor),
+                metadata={"selection_basis": "uniform_random_fixed_universe", "visible_only": visible_only},
+            ))
+        return _group_set(self.name, groups, config, anchor_set, universe)
 
 
 class _KNNBase:
@@ -90,6 +164,7 @@ class _KNNBase:
         view: Any,
         config: dict[str, Any],
         anchor_set: AnchorSet | None = None,
+        universe: GaussianUniverse | None = None,
     ) -> GroupSet:
         means = _means(gaussian_state)
         if (self.require_visible or self.require_overlap) and render_state is None:
@@ -99,9 +174,11 @@ class _KNNBase:
         if eligible is not None and visibility_threshold > 0.0 and hasattr(gaussian_state, "opacities"):
             eligible &= gaussian_state.opacities.detach().flatten() >= visibility_threshold
         anchors = _anchors(config, means.shape[0], means.device, eligible, anchor_set)
+        _validate_universe_anchors(anchors, universe)
         member_candidates: torch.Tensor | None = None
         if anchor_set is not None and anchor_set.filter_group_members:
             member_candidates = torch.tensor(anchor_set.candidate_gaussian_ids, dtype=torch.long, device=means.device)
+        universe_candidates = None if universe is None else torch.tensor(universe.gaussian_ids, dtype=torch.long, device=means.device)
         group_size = max(1, int(config.get("group_size", 1)))
         pool_size = max(group_size, int(config.get("candidate_pool_size", max(group_size * 4, 32))))
         distance_threshold = config.get("distance_threshold")
@@ -115,6 +192,10 @@ class _KNNBase:
             candidate_mask = torch.ones(means.shape[0], dtype=torch.bool, device=means.device)
             if self.require_visible:
                 candidate_mask &= eligible
+            if universe_candidates is not None:
+                universe_mask = torch.zeros_like(candidate_mask)
+                universe_mask[universe_candidates] = True
+                candidate_mask &= universe_mask
             if member_candidates is not None:
                 contributor_mask = torch.zeros_like(candidate_mask)
                 contributor_mask[member_candidates] = True
@@ -190,7 +271,7 @@ class _KNNBase:
                     "render_state": render_state.metadata if render_state is not None else None,
                 },
             ))
-        return _group_set(self.name, groups, config, anchor_set)
+        return _group_set(self.name, groups, config, anchor_set, universe)
 
 
 @REGISTRIES["grouping"].register("knn_3d")

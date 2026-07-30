@@ -19,7 +19,7 @@ from ..evaluation import select_audit_views
 from ..evaluation import PhaseTimer
 from ..registry import REGISTRIES
 from ..sampling import build_render_state, sample_top_tiles_and_pixels
-from ..types import AnchorSet, CurvatureData, Group, GroupSet, JacobianData, RenderState, ResidualData
+from ..types import AnchorSet, CurvatureData, GaussianUniverse, Group, GroupSet, JacobianData, RenderState, ResidualData
 
 
 @dataclass(slots=True)
@@ -31,6 +31,7 @@ class PreparedExperiment:
     target: torch.Tensor
     render_state: RenderState
     pixel_indices: torch.Tensor
+    universe: GaussianUniverse | None
     anchor_set: AnchorSet
     group_set: GroupSet
     residual_data: ResidualData
@@ -119,9 +120,10 @@ def prepare_view(
         "sampled_pixel_ids": [int(value) for value in pixel_ids.tolist()],
         "view_id": effective_view_id,
     })
+    universe_strategy = REGISTRIES["universe"].create(config["universe"]["name"])
     anchor_strategy = REGISTRIES["anchor_selection"].create(config["anchor_selection"]["name"])
     contribution_scores = None
-    if anchor_strategy.requires_contribution_scores:
+    if anchor_strategy.requires_contribution_scores or universe_strategy.needs_contribution_scores(config["universe"]):
         with PhaseTimer("contribution_probe", device=device) as timer:
             contribution_scores, probe_metadata = estimate_position_jacobian_energy(
                 lambda: runtime.training_render(primary),
@@ -132,6 +134,15 @@ def prepare_view(
         timing_records.append(timer.record)
     else:
         probe_metadata = {"estimator": "not_required"}
+    with PhaseTimer("universe_selection", device=device) as timer:
+        universe = universe_strategy.build(
+            runtime.model.gaussians,
+            restricted_state,
+            primary,
+            config["universe"],
+            contribution_scores,
+        )
+    timing_records.append(timer.record)
     with PhaseTimer("anchor_selection", device=device) as timer:
         anchor_set = anchor_strategy.select(
             runtime.model.gaussians,
@@ -139,16 +150,24 @@ def prepare_view(
             primary,
             config["anchor_selection"],
             contribution_scores,
+            universe,
         )
     timing_records.append(timer.record)
     anchor_set.metadata.update(probe_metadata)
     with PhaseTimer("group_construction", device=device) as timer:
         grouping_strategy = REGISTRIES["grouping"].create(config["grouping"]["name"])
-        group_set = grouping_strategy.build_groups(runtime.model.gaussians, restricted_state, primary, config["grouping"], anchor_set)
+        group_set = grouping_strategy.build_groups(
+            runtime.model.gaussians,
+            restricted_state,
+            primary,
+            config["grouping"],
+            anchor_set,
+            universe,
+        )
     timing_records.append(timer.record)
     if not group_set.groups:
         raise RuntimeError("grouping produced no groups for the sampled anchors")
-    return PreparedExperiment(config, runtime, audits, primary, target, restricted_state, pixel_ids, anchor_set, group_set, residual_data, timing_records)
+    return PreparedExperiment(config, runtime, audits, primary, target, restricted_state, pixel_ids, universe, anchor_set, group_set, residual_data, timing_records)
 
 
 def checkpoint_file_metadata(path: str | Path) -> dict[str, Any]:

@@ -4,7 +4,7 @@ import unittest
 
 import torch
 
-from experiments.coupling.curvature import GaussNewtonAssembler, coupling_capture_ratio
+from experiments.coupling.curvature import GaussNewtonAssembler, coupling_capture_ratio, edge_capture_metrics
 from experiments.coupling.jacobian import FiniteDifferenceJacobian, RepeatedVJPJacobian, jacobian_relative_error
 from experiments.coupling.residuals import RGBL2SampledResidual
 
@@ -49,6 +49,18 @@ class JacobianCurvatureTest(unittest.TestCase):
         hessian[3:, :3] = hessian[:3, 3:].T
         self.assertEqual(coupling_capture_ratio(hessian, [(0, 1)], 3), 1.0)
         self.assertEqual(coupling_capture_ratio(torch.zeros_like(hessian), [(0, 1)], 3), 0.0)
+
+    def test_explicit_capture_preserves_tensor_dtype_division(self):
+        hessian = torch.zeros(9, 9, dtype=torch.float32)
+        hessian[:3, 3:6] = torch.eye(3) * 0.1
+        hessian[3:6, :3] = hessian[:3, 3:6].T
+        hessian[:3, 6:9] = torch.eye(3) * 0.2
+        hessian[6:9, :3] = hessian[:3, 6:9].T
+        metrics = edge_capture_metrics(hessian, {(0, 1)}, {(0, 1), (0, 2)}, 3)
+        selected = torch.linalg.matrix_norm(hessian[:3, 3:6], ord="fro").square()
+        total = selected + torch.linalg.matrix_norm(hessian[:3, 6:9], ord="fro").square()
+        expected = float((selected / total).item())
+        self.assertEqual(metrics["capture_ratio"], expected)
 
 
 if __name__ == "__main__":

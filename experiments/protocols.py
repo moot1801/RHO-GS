@@ -6,7 +6,22 @@ from typing import Any, Protocol
 
 import torch
 
-from .types import AnchorSet, CurvatureData, Group, GroupSet, JacobianData, RenderState, ResidualData, UpdateProposal
+from .types import AnchorSet, CurvatureData, GaussianUniverse, Group, GroupSet, JacobianData, RenderState, ResidualData, UpdateProposal
+
+
+class UniverseSelectionStrategy(Protocol):
+    name: str
+
+    def needs_contribution_scores(self, config: dict[str, Any]) -> bool: ...
+
+    def build(
+        self,
+        gaussian_state: Any,
+        render_state: RenderState,
+        view: Any,
+        config: dict[str, Any],
+        contribution_scores: torch.Tensor | None = None,
+    ) -> GaussianUniverse | None: ...
 
 
 class AnchorSelectionStrategy(Protocol):
@@ -20,6 +35,7 @@ class AnchorSelectionStrategy(Protocol):
         view: Any,
         config: dict[str, Any],
         contribution_scores: torch.Tensor | None = None,
+        universe: GaussianUniverse | None = None,
     ) -> AnchorSet: ...
 
 
@@ -33,6 +49,7 @@ class GroupingStrategy(Protocol):
         view: Any,
         config: dict[str, Any],
         anchor_set: AnchorSet | None = None,
+        universe: GaussianUniverse | None = None,
     ) -> GroupSet: ...
 
 

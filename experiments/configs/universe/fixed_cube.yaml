@@ -1,0 +1,12 @@
+universe:
+  name: fixed_cube
+  center_xyz: null
+  center_gaussian_id: null
+  half_extent: null
+  visible_only: true
+  contributor_only: false
+  minimum_gaussians: 2
+  maximum_gaussians: 64
+  overflow_policy: error
+  absolute_score_threshold: 0.0
+  relative_score_threshold: 1.0e-8

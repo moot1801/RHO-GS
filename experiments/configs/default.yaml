@@ -5,6 +5,18 @@ scene: lego
 seed: 0
 device: cuda
 output_root: output/RHO_GS/experiments
+universe:
+  name: disabled
+  center_xyz: null
+  center_gaussian_id: null
+  half_extent: null
+  visible_only: true
+  contributor_only: false
+  minimum_gaussians: 2
+  maximum_gaussians: 64
+  overflow_policy: error
+  absolute_score_threshold: 0.0
+  relative_score_threshold: 1.0e-8
 anchor_selection:
   name: random_eligible
   sampled_anchor_count: 8

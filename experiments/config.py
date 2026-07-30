@@ -13,7 +13,7 @@ import yaml
 
 
 CONFIG_ROOT = Path(__file__).resolve().parent / "configs"
-GROUP_KEYS = ("anchor_selection", "grouping", "attributes", "residual", "jacobian", "solver", "aggregation", "acceptance", "evaluation", "benchmark")
+GROUP_KEYS = ("universe", "anchor_selection", "grouping", "attributes", "residual", "jacobian", "solver", "aggregation", "acceptance", "evaluation", "benchmark")
 
 
 def _merge(target: dict[str, Any], source: dict[str, Any]) -> dict[str, Any]:

@@ -51,6 +51,7 @@ class Registry(Generic[T]):
 REGISTRIES: dict[str, Registry[Any]] = {
     name: Registry(name)
     for name in (
+        "universe",
         "anchor_selection",
         "grouping",
         "parameter_block",

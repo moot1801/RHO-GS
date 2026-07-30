@@ -1,0 +1,36 @@
+experiment_name: lego_position_fixed_region
+scene: lego
+universe:
+  name: fixed_cube
+  visible_only: true
+  contributor_only: false
+  minimum_gaussians: 16
+  maximum_gaussians: 64
+  overflow_policy: error
+anchor_selection:
+  name: random_contributor
+  sampled_anchor_count: 8
+  filter_group_members: false
+  probe_count: 4
+grouping:
+  name: visible_overlap_knn
+  group_size: 8
+  candidate_pool_size: 64
+  sampled_anchor_count: 8
+attributes:
+  name: position
+residual:
+  name: rgb_l2_sampled
+jacobian:
+  name: repeated_vjp
+solver:
+  name: group_lm
+aggregation:
+  name: anchor_only
+acceptance:
+  name: lm_gain_ratio
+evaluation:
+  primary_view_id: 51
+  image_scale_factor: 0.25
+  top_tiles: 2
+  pixels_per_tile: 16

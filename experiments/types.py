@@ -9,6 +9,27 @@ import torch
 
 
 @dataclass(slots=True)
+class GaussianUniverse:
+    strategy: str
+    gaussian_ids: tuple[int, ...]
+    gaussian_id_hash: str
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+    @property
+    def size(self) -> int:
+        return len(self.gaussian_ids)
+
+    def to_record(self) -> dict[str, Any]:
+        return {
+            "strategy": self.strategy,
+            "gaussian_ids": self.gaussian_ids,
+            "gaussian_count": self.size,
+            "gaussian_id_hash": self.gaussian_id_hash,
+            "metadata": self.metadata,
+        }
+
+
+@dataclass(slots=True)
 class AnchorSet:
     strategy: str
     anchor_gaussian_ids: tuple[int, ...]

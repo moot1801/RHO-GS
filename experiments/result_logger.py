@@ -55,6 +55,7 @@ class ResultLogger:
             "experiment_id": self.experiment_id,
             "scene": self.config.get("scene"),
             "seed": self.config.get("seed"),
+            "universe": self.config["universe"]["name"],
             "grouping": self.config["grouping"]["name"],
             "anchor_selection": self.config["anchor_selection"]["name"],
             "group_size": self.config["grouping"].get("group_size"),

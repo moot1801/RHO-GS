@@ -65,16 +65,84 @@ def group_normalized_coupling(hessian: torch.Tensor, block_dimension: int, dampi
 
 def coupling_capture_ratio(hessian: torch.Tensor, groups: list[tuple[int, ...]], block_dimension: int) -> float:
     n_blocks = hessian.shape[0] // block_dimension
+    included = {tuple(sorted((i, j))) for group in groups for i in group for j in group if i < j}
+    eligible = {(i, j) for i in range(n_blocks) for j in range(i + 1, n_blocks)}
+    return float(edge_capture_metrics(hessian, included, eligible, block_dimension)["capture_ratio"])
+
+
+def _canonical_edges(edges: set[tuple[int, int]], n_blocks: int) -> set[tuple[int, int]]:
+    canonical: set[tuple[int, int]] = set()
+    for first, second in edges:
+        i, j = sorted((int(first), int(second)))
+        if i == j:
+            continue
+        if i < 0 or j >= n_blocks:
+            raise ValueError(f"edge ({first}, {second}) is outside {n_blocks} Hessian blocks")
+        canonical.add((i, j))
+    return canonical
+
+
+def _offdiagonal_energy(hessian: torch.Tensor, edge: tuple[int, int], block_dimension: int) -> torch.Tensor:
+    i, j = edge
+    block = hessian[
+        i * block_dimension:(i + 1) * block_dimension,
+        j * block_dimension:(j + 1) * block_dimension,
+    ]
+    return torch.linalg.matrix_norm(block, ord="fro").square()
+
+
+def edge_capture_metrics(
+    hessian: torch.Tensor,
+    selected_edges: set[tuple[int, int]],
+    eligible_edges: set[tuple[int, int]],
+    block_dimension: int,
+) -> dict[str, float | int]:
+    """Measure raw off-diagonal energy capture on an explicit fixed edge universe."""
+
+    n_blocks = hessian.shape[0] // block_dimension
+    eligible = _canonical_edges(eligible_edges, n_blocks)
+    selected = _canonical_edges(selected_edges, n_blocks) & eligible
     total = hessian.new_zeros(())
     captured = hessian.new_zeros(())
-    included = {tuple(sorted((i, j))) for group in groups for i in group for j in group if i < j}
-    for i in range(n_blocks):
-        for j in range(i + 1, n_blocks):
-            block = hessian[i * block_dimension:(i + 1) * block_dimension, j * block_dimension:(j + 1) * block_dimension]
-            energy = torch.linalg.matrix_norm(block, ord="fro").square()
-            total += energy
-            if (i, j) in included:
-                captured += energy
-    if float(total.item()) == 0.0:
-        return 0.0
-    return float((captured / total).item())
+    for edge in sorted(eligible):
+        energy = _offdiagonal_energy(hessian, edge, block_dimension)
+        total += energy
+        if edge in selected:
+            captured += energy
+    total_value = float(total.item())
+    captured_value = float(captured.item())
+    capture_ratio = 0.0 if total_value == 0.0 else float((captured / total).item())
+    return {
+        "eligible_edge_count": len(eligible),
+        "selected_edge_count": len(selected),
+        "total_offdiagonal_energy": total_value,
+        "captured_offdiagonal_energy": captured_value,
+        "capture_ratio": capture_ratio,
+    }
+
+
+def edge_budget_oracle_capture_metrics(
+    hessian: torch.Tensor,
+    eligible_edges: set[tuple[int, int]],
+    edge_budget: int,
+    block_dimension: int,
+) -> dict[str, float | int]:
+    """Loose upper bound from the highest-energy eligible edges at the same global budget."""
+
+    n_blocks = hessian.shape[0] // block_dimension
+    eligible = _canonical_edges(eligible_edges, n_blocks)
+    budget = min(max(0, int(edge_budget)), len(eligible))
+    energies = sorted(
+        (float(_offdiagonal_energy(hessian, edge, block_dimension).item()) for edge in eligible),
+        reverse=True,
+    )
+    total = sum(energies)
+    captured = sum(energies[:budget])
+    return {
+        "eligible_edge_count": len(eligible),
+        "selected_edge_count": budget,
+        "total_offdiagonal_energy": total,
+        "captured_offdiagonal_energy": captured,
+        "capture_ratio": 0.0 if total == 0.0 else captured / total,
+        "oracle_basis": "global_top_raw_offdiagonal_energy_at_equal_edge_budget",
+    }

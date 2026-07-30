@@ -3,7 +3,7 @@ from __future__ import annotations
 import unittest
 
 from experiments.config import compose_config
-from experiments.coupling import anchor_selection, grouping, parameter_blocks, residuals, solvers  # noqa: F401
+from experiments.coupling import anchor_selection, grouping, parameter_blocks, residuals, solvers, universe  # noqa: F401
 from experiments.registry import REGISTRIES, Registry
 
 
@@ -25,6 +25,7 @@ class ConfigRegistryTest(unittest.TestCase):
 
     def test_expected_extension_points_registered(self):
         self.assertIn("random_contributor", REGISTRIES["anchor_selection"].names())
+        self.assertIn("fixed_cube", REGISTRIES["universe"].names())
         self.assertIn("position", REGISTRIES["parameter_block"].names())
         self.assertIn("visible_overlap_knn", REGISTRIES["grouping"].names())
         self.assertIn("group_lm", REGISTRIES["solver"].names())
@@ -35,6 +36,11 @@ class ConfigRegistryTest(unittest.TestCase):
         config = compose_config(["anchor_selection=random_contributor", "anchor_selection.probe_count=7"])
         self.assertEqual(config["anchor_selection"]["name"], "random_contributor")
         self.assertEqual(config["anchor_selection"]["probe_count"], 7)
+
+    def test_universe_fragment(self):
+        config = compose_config(["universe=fixed_cube", "universe.half_extent=0.25"])
+        self.assertEqual(config["universe"]["name"], "fixed_cube")
+        self.assertEqual(config["universe"]["half_extent"], 0.25)
 
 
 if __name__ == "__main__":

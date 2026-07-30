@@ -6,7 +6,7 @@
 
 | 완료 기능 | 상태 |
 |---|---|
-| Registry 기반 anchor/grouping/parameter/residual/Jacobian/curvature/solver/aggregation/acceptance 교체 | 완료 |
+| Registry 기반 universe/anchor/grouping/parameter/residual/Jacobian/curvature/solver/aggregation/acceptance 교체 | 완료 |
 | Position parameter block | 완료 |
 | independent, kNN 3D, visible kNN, visible-overlap kNN | 완료 |
 | RGB L2 전체·sampled residual | 완료 |
@@ -16,6 +16,7 @@
 | one-step counterfactual, fixed-topology rollout | reference 구현 완료 |
 | optimizer/RNG/sampler portable checkpoint | 완료 |
 | contributor-aware anchor와 zero-group 진단 | 완료 |
+| fixed-cube evaluation universe, random-in-universe, fixed-universe capture | 완료 |
 | oracle JᵀJ grouping, 추가 attribute, CUDA 최적화 | 미구현 |
 
 ## 실행 환경
@@ -53,6 +54,29 @@ python -m Methods.RHO_GS.experiments.runners.one_step_benchmark \
 ```
 
 현재 `final.pt`는 optimizer state가 없는 model-only checkpoint다. LM 분석은 가능하지만 `solver=adam`은 기본적으로 실패시켜 불공정 비교를 막는다. `solver.allow_cold_start=true`는 탐색용 cold-start임을 결과에 기록할 때만 사용한다.
+
+### Fixed-region checkpoint 분석
+
+기존 analyzer는 group을 먼저 만든 뒤 group member의 합집합을 분모로 사용했다. 이 `induced_union_capture_ratio`는 선택된 부분집합 내부 응집도이며, grouping이 고정 모집단의 coupling을 얼마나 찾았는지는 나타내지 않는다. 공정한 grouping 비교에는 grouping 전에 cube universe를 고정한다.
+
+```bash
+python -m Methods.RHO_GS.experiments.runners.analyze_checkpoint \
+  experiment=lego_position_fixed_region \
+  experiment_name=<work-run-label> \
+  checkpoint=<checkpoint-path> \
+  universe=fixed_cube \
+  universe.center_gaussian_id=<checkpoint-local-id> \
+  universe.half_extent=<world-space-half-extent> \
+  universe.maximum_gaussians=64 \
+  anchor_selection=random_contributor \
+  anchor_selection.filter_group_members=False \
+  grouping=visible_overlap_knn \
+  grouping.group_size=8
+```
+
+처리 순서는 `sampled residual → fixed universe → anchor → group → universe Jacobian/Hessian`이다. `overflow_policy=error`가 기본이므로 cube가 최대 크기를 넘으면 영역을 암묵적으로 잘라내지 않고 실패한다. `nearest_center`는 명시한 경우에만 결정론적 진단용 truncation으로 사용한다.
+
+같은 universe·anchor·K에서 `grouping=random_in_universe`를 실행하면 공간 grouping의 random 기준선을 얻는다. `edge_budget_oracle_capture_ratio`는 실제 grouping이 아니라 동일한 전체 edge 수에서 raw off-diagonal energy가 큰 edge를 고른 느슨한 상한이다.
 
 ### 3. early/middle/late portable state 학습
 
@@ -107,6 +131,15 @@ rollout은 densify/clone/split/prune/opacity reset/SH 증가 callback을 호출�
 
 visible-overlap grouping의 공간 overlap은 여전히 rasterizer instance ID가 아니라 projected footprint 근사를 사용한다. anchor의 sampled residual 기여 여부와 공간 overlap 근사는 서로 다른 조건이며 각각 `anchors.jsonl`과 `groups.jsonl`에 기록된다.
 
+### Evaluation universe
+
+| universe | 의미 |
+|---|---|
+| `disabled` | 기존 group-induced union 평가 보존 |
+| `fixed_cube` | grouping 전에 world-space axis-aligned cube로 모집단 고정 |
+
+`fixed_cube.visible_only=true`는 현재 sampled tile로 제한된 render-state visibility와 cube를 교집합한다. `contributor_only=false`는 zero pair를 포함하는 unconditional 모집단이며, anchor만 contributor 중 선택할 수 있다. `contributor_only=true`는 active subset 조건부 분석이므로 두 결과를 혼동하지 않는다.
+
 ### Zero group 해석
 
 `group_diagnostics.csv`는 zero group도 삭제하지 않고 다음 상태로 분류한다.
@@ -128,6 +161,7 @@ output/RHO_GS/experiments/<experiment-id>/
 ├── resolved_config.yaml
 ├── environment.json
 ├── checkpoint_metadata.json
+├── universe.json
 ├── anchors.jsonl
 ├── groups.jsonl
 ├── group_diagnostics.csv
@@ -182,6 +216,8 @@ class MyGrouping:
 
 Anchor 전략은 `REGISTRIES["anchor_selection"]`에 등록한다. contributor score가 필요한 전략은 `requires_contribution_scores=True`를 선언하고 `select(..., contribution_scores)`에서 명시적 candidate population을 반환한다. `AnchorSet` artifact에는 선택 ID/점수, seed, candidate count/hash가 저장되며 전체 candidate ID는 메모리에서 grouping filter에만 사용한다.
 
+Universe 전략은 `REGISTRIES["universe"]`에 등록하며 `build(...)`가 grouping 전에 완전한 Gaussian ID 집합과 hash를 반환한다. anchor와 group strategy는 전달된 universe 밖 ID를 선택하면 안 된다.
+
 ## 수치 검증
 
 ```bash
@@ -197,6 +233,8 @@ Anchor 전략은 `REGISTRIES["anchor_selection"]`에 등록한다. contributor s
 - scale+rotation, opacity, DC color, opacity+DC, SH, composite block은 registry에 존재하지만 `NotImplementedError`를 발생시킨다.
 - `sqrt_l1_dssim`, `mse_dssim_diagonal`, `robust_rgb_irls` residual도 명시적 skeleton이다.
 - `oracle_jtj_topk`와 optimized CUDA 경로는 Priority 4로 남겨 두었다.
+- `edge_budget_oracle_capture_ratio`는 per-anchor K와 group realizability를 강제하지 않는 global edge-budget 상한이며 `oracle_jtj_topk` grouping을 대체하지 않는다.
+- fixed universe의 exact repeated-VJP 비용은 Gaussian 수에 선형으로 증가하므로 reference config는 최대 64개를 기본으로 한다.
 - one-step/rollout GPU 장면 통합은 실제 실행 전까지 `미확인`이다. 근거 구현은 `experiments/runners/`이며 CPU 수치 test만 완료됐다.
 - output의 Gaussian ID는 해당 checkpoint/snapshot 내부 index다. topology가 다른 checkpoint끼리 직접 identity로 대응시키지 않는다.
 - randomized VJP score는 유한 probe 추정치이며 exact per-Gaussian Jacobian norm이 아니다. probe count·seed·threshold를 비교 실험에서 고정한다.
