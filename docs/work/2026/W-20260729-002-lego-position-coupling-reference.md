@@ -90,8 +90,8 @@ python -m experiments.runners.rollout_benchmark \
 - analyzer, one-step, rollout은 `PYTHONPATH=src`와 `Methods.RHO_GS.experiments.runners.<runner>` package entry를 사용한다.
 
 ```bash
-conda run -n nerficg env PYTHONPATH=src \
-  python -m Methods.RHO_GS.experiments.runners.analyze_checkpoint \
+PYTHONPATH=src \
+python -m Methods.RHO_GS.experiments.runners.analyze_checkpoint \
   experiment=lego_position_reference \
   experiment_name=w20260729_002_r01_late_checkpoint_analysis \
   checkpoint=output/RHO_GS/rho_gs_lego_fixed_view_tile_stats_w20260728_003_r01_2026-07-28-19-21-37/checkpoints/final.pt \
